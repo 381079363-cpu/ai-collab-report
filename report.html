@@ -502,7 +502,7 @@
   <div class="grid-2">
     <div class="card">
       <div class="card-header">
-        <div class="card-title">四级部门 AI vs 协同 综合得分对比</div>
+        <div class="card-title">四级部门 AI vs 协同 综合得分对比（0-5原始分）</div>
       </div>
       <div class="card-body">
         <div class="chart-wrap"><canvas id="chart-overview-radar"></canvas></div>
@@ -819,7 +819,7 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><div class="card-title">四级部门综合雷达对比（AI × 协同 × 绩效）</div></div>
+    <div class="card-header"><div class="card-title">四级部门综合雷达对比（7维归一化标准分 0-5）</div><div style="font-size:12px;color:var(--text-muted)">各维度统一换算为0-5标准分，消除量纲差异</div></div>
     <div class="card-body"><div class="chart-wrap" style="max-width:600px;margin:0 auto"><canvas id="chart-insight-radar"></canvas></div></div>
   </div>
 </div>
@@ -1061,26 +1061,33 @@ function initDept4Charts() {
   // Scatter: x=ai score, y=co score, r=n
   mkChart('chart-d4-scatter', {
     type:'bubble',
-    data:{datasets:[{
-      label:'四级部门',
-      data: AI_L4.map((d,i)=>({
-        x:d.score, y:CO_L4[i].score,
-        r: Math.max(8,d.n*0.25),
-        label:d.dept, n:d.n
-      })),
-      backgroundColor: COLORS.map(c=>c+'99'),
-      borderColor: COLORS,
-      borderWidth:2,
-    }]},
+    data:{
+      datasets: AI_L4.map((d,i)=>({
+        label: d.dept.replace('大TQ',''),
+        data:[{ x:d.score, y:CO_L4[i].score, r:Math.max(10, d.n*0.28), n:d.n }],
+        backgroundColor: COLORS[i]+'99',
+        borderColor: COLORS[i],
+        borderWidth: 2,
+      }))
+    },
     options:{
       responsive:true,
       plugins:{
-        legend:{display:false},
-        tooltip:{callbacks:{label:ctx=>`${ctx.raw.label} (${ctx.raw.n}人)\nAI:${ctx.raw.x} 协同:${ctx.raw.y}`}}
+        legend:{ position:'bottom', labels:{ font:{size:11} } },
+        tooltip:{
+          callbacks:{
+            label: ctx => {
+              const pt = ctx.raw;
+              return [`${ctx.dataset.label} (${pt.n}人)`, `AI综合得分: ${pt.x}`, `协同综合得分: ${pt.y}`];
+            }
+          }
+        }
       },
       scales:{
-        x:{title:{display:true,text:'AI综合得分'},min:3.6,max:5},
-        y:{title:{display:true,text:'协同综合得分'},min:3.6,max:4.8}
+        x:{ title:{display:true,text:'AI综合得分（0-5）'}, min:3.6, max:5.1,
+            grid:{color:'rgba(26,124,250,0.08)'} },
+        y:{ title:{display:true,text:'协同综合得分（0-5）'}, min:3.6, max:4.8,
+            grid:{color:'rgba(26,124,250,0.08)'} }
       }
     }
   });
@@ -1213,27 +1220,57 @@ function selectDept5(l4name, el) {
 }
 
 function initInsightCharts() {
+  // 归一化基准：AI月均对话最大值=19，AI绩效满分=7，协同绩效满分=15，文档创建最大值=7.41，相关文档最大值=18
+  // 所有维度统一归一化到 0-5 标准分，确保雷达图各维度可比
+  const radarLabels = ['AI综合得分\n(0-5原值)', 'AI使用频率\n(对话数/19×5)', 'AI绩效得分\n(绩效/7×5)', '协同综合得分\n(0-5原值)', '协同绩效得分\n(绩效/15×5)', '文档创建活跃度\n(创建数/7.41×5)', '协同覆盖广度\n(相关文档/18×5)'];
+  // 归一化后的雷达数据（与Python计算结果一致）
+  const radarData = [
+    { dept:'人力发展中心',  vals:[4.67, 3.96, 5.00, 3.95, 3.65, 4.93, 3.49] },
+    { dept:'执董办公室',    vals:[4.80, 5.00, 5.00, 4.00, 4.00, 2.70, 3.61] },
+    { dept:'执行长办公室',  vals:[4.78, 4.32, 5.00, 4.36, 4.12, 4.72, 2.56] },
+    { dept:'法务及合规部',  vals:[3.90, 1.97, 3.21, 4.45, 3.90, 3.37, 1.94] },
+    { dept:'财务中心',      vals:[3.90, 2.22, 3.66, 3.97, 3.62, 4.05, 3.24] },
+    { dept:'食品安全中心',  vals:[4.47, 2.91, 4.66, 4.44, 3.90, 3.02, 2.81] },
+    { dept:'餐饮群总部',    vals:[4.57, 3.50, 4.76, 4.27, 3.88, 5.00, 5.00] },
+  ];
   mkChart('chart-insight-radar', {
     type:'radar',
     data:{
-      labels:['AI综合得分','AI对话数/20','AI绩效/7','协同得分','文档创建/15','相关文档/30'],
-      datasets: AI_L4.map((d,i)=>({
-        label:d.dept.replace('大TQ','').replace('餐饮群总部','餐饮群总部'),
-        data:[
-          d.score,
-          CO_L4[i].perf, // reuse as placeholder
-          d.perf/7*5,
-          CO_L4[i].score,
-          CO_L4[i].myDoc/15*5,
-          CO_L4[i].relDoc/30*5,
-        ],
-        borderColor:COLORS[i],
-        backgroundColor:COLORS[i]+'22',
-        pointBackgroundColor:COLORS[i],
-        borderWidth:2,
+      labels: radarLabels,
+      datasets: radarData.map((d,i)=>({
+        label: d.dept,
+        data: d.vals,
+        borderColor: COLORS[i],
+        backgroundColor: COLORS[i]+'18',
+        pointBackgroundColor: COLORS[i],
+        pointRadius: 3,
+        borderWidth: 2,
       }))
     },
-    options:{responsive:true,scales:{r:{min:0,max:5,ticks:{stepSize:1,font:{size:9}},pointLabels:{font:{size:11}}}},plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}
+    options:{
+      responsive:true,
+      scales:{
+        r:{
+          min:0, max:5,
+          ticks:{ stepSize:1, font:{size:9}, backdropColor:'transparent' },
+          pointLabels:{ font:{size:10}, color:'#4a6fa5' },
+          grid:{ color:'rgba(26,124,250,0.12)' },
+          angleLines:{ color:'rgba(26,124,250,0.15)' },
+        }
+      },
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{size:11}, padding:12 } },
+        tooltip:{
+          callbacks:{
+            label: ctx => {
+              const raw = ctx.raw;
+              const dim = ctx.label.split('\n')[0];
+              return `${ctx.dataset.label} · ${dim}: ${raw}分`;
+            }
+          }
+        }
+      }
+    }
   });
 }
 
