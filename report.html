@@ -818,9 +818,24 @@
     </div>
   </div>
 
+  <!-- 热力图矩阵：部门×维度 -->
   <div class="card">
-    <div class="card-header"><div class="card-title">四级部门综合雷达对比（7维归一化标准分 0-5）</div><div style="font-size:12px;color:var(--text-muted)">各维度统一换算为0-5标准分，消除量纲差异</div></div>
-    <div class="card-body"><div class="chart-wrap" style="max-width:600px;margin:0 auto"><canvas id="chart-insight-radar"></canvas></div></div>
+    <div class="card-header">
+      <div class="card-title">四级部门多维能力热力图</div>
+      <div style="font-size:12px;color:var(--text-muted)">颜色越深代表得分/活跃度越高；AI绩效满分7分，协同绩效满分15分</div>
+    </div>
+    <div class="card-body">
+      <div id="insight-heatmap" style="overflow-x:auto"></div>
+    </div>
+  </div>
+
+  <!-- 分组柱状图：各部门横向对比 -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">四级部门综合能力分组柱状图</div>
+      <div style="font-size:12px;color:var(--text-muted)">6项关键指标同维度并排对比，直观看差距</div>
+    </div>
+    <div class="card-body"><div class="chart-wrap"><canvas id="chart-insight-grouped"></canvas></div></div>
   </div>
 </div>
 
@@ -1220,54 +1235,107 @@ function selectDept5(l4name, el) {
 }
 
 function initInsightCharts() {
-  // 归一化基准：AI月均对话最大值=19，AI绩效满分=7，协同绩效满分=15，文档创建最大值=7.41，相关文档最大值=18
-  // 所有维度统一归一化到 0-5 标准分，确保雷达图各维度可比
-  const radarLabels = ['AI综合得分\n(0-5原值)', 'AI使用频率\n(对话数/19×5)', 'AI绩效得分\n(绩效/7×5)', '协同综合得分\n(0-5原值)', '协同绩效得分\n(绩效/15×5)', '文档创建活跃度\n(创建数/7.41×5)', '协同覆盖广度\n(相关文档/18×5)'];
-  // 归一化后的雷达数据（与Python计算结果一致）
-  const radarData = [
-    { dept:'人力发展中心',  vals:[4.67, 3.96, 5.00, 3.95, 3.65, 4.93, 3.49] },
-    { dept:'执董办公室',    vals:[4.80, 5.00, 5.00, 4.00, 4.00, 2.70, 3.61] },
-    { dept:'执行长办公室',  vals:[4.78, 4.32, 5.00, 4.36, 4.12, 4.72, 2.56] },
-    { dept:'法务及合规部',  vals:[3.90, 1.97, 3.21, 4.45, 3.90, 3.37, 1.94] },
-    { dept:'财务中心',      vals:[3.90, 2.22, 3.66, 3.97, 3.62, 4.05, 3.24] },
-    { dept:'食品安全中心',  vals:[4.47, 2.91, 4.66, 4.44, 3.90, 3.02, 2.81] },
-    { dept:'餐饮群总部',    vals:[4.57, 3.50, 4.76, 4.27, 3.88, 5.00, 5.00] },
+  // ===== 原始数据（不做归一化，直接用真实值，便于读图） =====
+  const depts = ['人力发展中心','执董办公室','执行长办公室','法务及合规部','财务中心','食品安全中心','餐饮群总部'];
+  // 6个维度的原始均值
+  const aiScore    = [4.67, 4.80, 4.78, 3.90, 3.90, 4.47, 4.57]; // AI综合得分(0-5)
+  const aiTalks    = [15.08, 19.00, 16.43, 7.50, 8.45, 11.08, 13.33]; // AI月均对话数(次)
+  const aiPerf     = [7.00, 7.00, 7.00, 3.21*7/5, 3.66*7/5, 4.66*7/5, 4.76*7/5]; // AI绩效(0-7)，还原真实分
+  const coScore    = [3.95, 4.00, 4.36, 4.45, 3.97, 4.44, 4.27]; // 协同综合得分(0-5)
+  const coPerf     = [3.65*15/5, 4.00*15/5, 4.12*15/5, 3.90*15/5, 3.62*15/5, 3.90*15/5, 3.88*15/5]; // 协同绩效(0-15)，还原真实分
+  const myDoc      = [7.31, 4.00, 7.00, 5.00, 6.01, 4.48, 7.41]; // 月均创建文档(个)
+  const relDoc     = [12.56, 13.00, 9.19, 7.00, 11.64, 10.12, 18.00]; // 月均相关文档(个)
+
+  // ===== 1. 热力图矩阵（纯 HTML/CSS 实现，不依赖 Chart.js） =====
+  const heatDims = [
+    { label:'AI综合得分\n(满分5)', vals:aiScore, max:5, fmt: v=>`${v.toFixed(2)}` },
+    { label:'AI月均对话(次)', vals:aiTalks, max:20, fmt: v=>`${v.toFixed(1)}次` },
+    { label:'AI绩效(满分7)', vals:aiPerf, max:7, fmt: v=>`${v.toFixed(2)}` },
+    { label:'协同综合得分\n(满分5)', vals:coScore, max:5, fmt: v=>`${v.toFixed(2)}` },
+    { label:'协同绩效(满分15)', vals:coPerf, max:15, fmt: v=>`${v.toFixed(2)}` },
+    { label:'月均创建文档(个)', vals:myDoc, max:8, fmt: v=>`${v.toFixed(1)}个` },
+    { label:'月均相关文档(个)', vals:relDoc, max:19, fmt: v=>`${v.toFixed(1)}个` },
   ];
-  mkChart('chart-insight-radar', {
-    type:'radar',
-    data:{
-      labels: radarLabels,
-      datasets: radarData.map((d,i)=>({
-        label: d.dept,
-        data: d.vals,
+
+  function heatColor(val, max) {
+    const ratio = Math.min(val / max, 1);
+    // 从浅蓝 #ddeeff 到深蓝 #1a7cfa
+    const r = Math.round(221 - ratio * (221 - 26));
+    const g = Math.round(238 - ratio * (238 - 124));
+    const b = Math.round(255 - ratio * (255 - 250));
+    return `rgb(${r},${g},${b})`;
+  }
+  function textColor(val, max) {
+    return val / max > 0.55 ? '#fff' : '#1a2a4a';
+  }
+
+  const table = document.getElementById('insight-heatmap');
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead><tr>
+      <th style="padding:8px 10px;background:#f0f5ff;text-align:left;font-weight:600;color:#4a6fa5;min-width:90px;border-bottom:2px solid #cde">部门</th>
+      ${heatDims.map(d=>`<th style="padding:8px 6px;background:#f0f5ff;text-align:center;font-weight:600;color:#4a6fa5;font-size:11px;border-bottom:2px solid #cde;white-space:pre-line">${d.label}</th>`).join('')}
+    </tr></thead><tbody>`;
+  depts.forEach((dept, di) => {
+    html += `<tr>
+      <td style="padding:9px 10px;font-weight:600;color:#1a2a4a;border-bottom:1px solid #e8f0fe;white-space:nowrap">${dept}</td>
+      ${heatDims.map(d=>{
+        const v = d.vals[di];
+        const bg = heatColor(v, d.max);
+        const tc = textColor(v, d.max);
+        return `<td style="padding:9px 6px;text-align:center;background:${bg};color:${tc};font-weight:700;border-bottom:1px solid #e8f0fe;font-size:12px">${d.fmt(v)}</td>`;
+      }).join('')}
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  table.innerHTML = html;
+
+  // ===== 2. 分组柱状图：3组并排（AI维度 / 协同维度 / 活跃度维度） =====
+  // 选6个最关键、量纲相近的指标：AI综合得分、协同综合得分、AI绩效(0-7)、协同绩效(0-15)→归一百分比、月均创建、月均相关
+  // 为了同轴展示，各指标按实际满分归一化为0-100%后展示
+  const groupLabels = ['AI综合\n(÷5×100)', 'AI月均对话\n(÷20×100)', 'AI绩效\n(÷7×100)', '协同综合\n(÷5×100)', '协同绩效\n(÷15×100)', '文档创建\n(÷8×100)', '相关文档\n(÷19×100)'];
+  const pct = (arr, max) => arr.map(v => +(v / max * 100).toFixed(1));
+
+  mkChart('chart-insight-grouped', {
+    type: 'bar',
+    data: {
+      labels: groupLabels,
+      datasets: depts.map((dept, i) => ({
+        label: dept,
+        data: [
+          pct(aiScore,5)[i],
+          pct(aiTalks,20)[i],
+          pct(aiPerf,7)[i],
+          pct(coScore,5)[i],
+          pct(coPerf,15)[i],
+          pct(myDoc,8)[i],
+          pct(relDoc,19)[i],
+        ],
+        backgroundColor: COLORS[i]+'cc',
         borderColor: COLORS[i],
-        backgroundColor: COLORS[i]+'18',
-        pointBackgroundColor: COLORS[i],
-        pointRadius: 3,
-        borderWidth: 2,
+        borderWidth: 1,
+        borderRadius: 3,
       }))
     },
-    options:{
-      responsive:true,
-      scales:{
-        r:{
-          min:0, max:5,
-          ticks:{ stepSize:1, font:{size:9}, backdropColor:'transparent' },
-          pointLabels:{ font:{size:10}, color:'#4a6fa5' },
-          grid:{ color:'rgba(26,124,250,0.12)' },
-          angleLines:{ color:'rgba(26,124,250,0.15)' },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position:'bottom', labels:{ font:{size:11}, padding:12, usePointStyle:true } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.raw}%`
+          }
         }
       },
-      plugins:{
-        legend:{ position:'bottom', labels:{ font:{size:11}, padding:12 } },
-        tooltip:{
-          callbacks:{
-            label: ctx => {
-              const raw = ctx.raw;
-              const dim = ctx.label.split('\n')[0];
-              return `${ctx.dataset.label} · ${dim}: ${raw}分`;
-            }
-          }
+      scales: {
+        x: {
+          grid: { display:false },
+          ticks: { font:{size:11}, color:'#4a6fa5' }
+        },
+        y: {
+          min: 0, max: 110,
+          title: { display:true, text:'各满分占比 (%)', font:{size:11}, color:'#4a6fa5' },
+          ticks: { callback: v => v+'%', font:{size:10} },
+          grid: { color:'rgba(26,124,250,0.07)' }
         }
       }
     }
